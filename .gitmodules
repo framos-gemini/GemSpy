@@ -1,0 +1,3 @@
+[submodule "pyshark"]
+	path = pyshark
+	url = https://github.com/framos-gemini/pyshark.git
