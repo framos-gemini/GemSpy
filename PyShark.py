@@ -7,23 +7,22 @@ import copy
 from typing import List 
 import sys, os
 #sys.path.append('/home/software/fr/gemspy/pyshark.git/src')
-sys.path.append('/home/framos/fr/gemspy/pyshark.git/src')
+sys.path.append('/home/software/fr/gemspy/pyshark.git/src')
+#sys.path.append('./pyshark/src')
 import pyshark 
 import time, glob
 
 
 @dataclass
 class PyShark:
-   #param = {'-X': 'lua_script:/home/software/ca2.lua', '-f': '"host 172.16.44.50 or host 172.17.65.100 and (not host 172.17.5.96 or not host 172.17.5.95)"'}
-   #param = {'-X': 'lua_script:/home/framos/fr/gemspy/ca2.lua'}
-   param              = {'-X': 'lua_script:/home/framos/fr/gemspy/ca.lua'}
+   param              = {'-X': f'lua_script:{os.getcwd()}/tshark-plugin/ca.lua'}
    bpfilter     : str = '' 
    cap                = None
    interface    : str = 'eno1'
    dMultproc          = {'qList' : None, 'lProc' : [], 'lPath' : []}
    #qList        : multiprocessing.Queue = None
    lhost : List = field(default_factory=list) 
-   lhexcl : List = field(default_factory=list) 
+   lhexcl : List = field(default_factory=list)  # List host to exclude capturing package. 
    isProcessing : bool =  False
 
    #################################
@@ -41,7 +40,12 @@ class PyShark:
          print("TODO. tshark had an error or a file was removed")
        
    #################################
-   def __readFile__(self, path, q):
+   # parameters:
+   #    q : This is a multiprocessing.queue which is shared
+   #        with the ProcessPackage. 
+   #  path: This is path file which will be read. 
+   #################################
+   def __readFile__(self, path, q):  
       try:
          self.cap = pyshark.FileCapture(path, custom_parameters=self.param)
          for p in self.cap:
@@ -102,14 +106,14 @@ class PyShark:
 
    #################################
 
-   def processFiles(self, file_path):
+   def processFiles(self, dir_path):
       t1 = time.time()
       filesD = {}
 
       numProc = len(self.dMultproc['qList'])
       self.dMultproc['lProc'] = [None] * len(self.dMultproc['qList'])
       while (True):
-         updated, lfiles, nFilesReady = self.getInfoFiles(file_path, filesD)
+         updated, lfiles, nFilesReady = self.getInfoFiles(dir_path, filesD)
          # I have taken the condtion nFilesReady < numProc because
          # there is delay in the nfs files updating which makes that 
          # the getInfoFiles creates the files are not being updated. 
