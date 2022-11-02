@@ -16,7 +16,7 @@ from Deploy import Deploy
 @click.option('--lhexcl', default=None, help='List of IP ADDRESS of the hosts that you want to exclude of the gathering information. The host specified can be source or destinity. This parameter is taken in account on package capture')
 @click.option('--live', default=None, help='This option requires the name of the interface which will be used to capture packets from the network. For example --live eno2. One of the --live or capfile options should be provided')
 @click.option('--capfile', default=None, help='This option requires the path of the cap file to analyse. For example --capfile /tmp/filename.cap. One of the --live or capfile options should be provided')
-@click.option('--jsonoutput', nargs=2, default=(None,None), type=click.Tuple([str,int]), help='This parameter is a a Tuple. The first parameter  indicates the json path file where you want to store the data. The second parameter indicates the time that you want to store this information to the file')
+@click.option('--jsonoutput', nargs=2, default=(None,0), type=click.Tuple([str,int]), help='This parameter is a a Tuple. The first parameter  indicates the json path file where you want to store the data. The second parameter indicates the time that you want to store this information to the file')
 @click.pass_context
 #def cli(ctx, debug, pvfilter, bpfilter, pvlist, lhost, lhexcl, live, capfile, printdata, jsonoutput):
 def cli(ctx, debug, pvfilter, bpfilter, lhost, lhexcl, live, capfile, jsonoutput):
@@ -27,9 +27,8 @@ def cli(ctx, debug, pvfilter, bpfilter, lhost, lhexcl, live, capfile, jsonoutput
     ctx.obj['lhexcl'] = re.split(';', lhexcl) if lhexcl is not None else []
     ctx.obj['live'] = live
     ctx.obj['capfile'] = capfile
-    lpath, nSecs = jsonoutput if jsonoutput else (None, None)
-    ctx.obj['jsonoutput'] = lpath
-    ctx.obj['storedata'] = nSecs
+    ctx.obj['jsonoutput'] = jsonoutput[0]
+    ctx.obj['storedata']  =  jsonoutput[1]
     ctx.obj['bpfilter'] = bpfilter
     if ((not ctx.obj['live'] and not ctx.obj['capfile']) or \
         (ctx.obj['bpfilter'] and ( ctx.obj['lhexcl'] or ctx.obj['lhost'] ))): 
@@ -54,6 +53,7 @@ def runNoGui(ctx, pvlist, printdata):
        return 0
 
     print(f'##### pvfilter: {ctx.obj["lpvnames"]} ')
+    print(f'##### storedata: {ctx.obj["storedata"]} ')
     deploy = Deploy()
     dataClient = deploy.startApp(ctx.obj['capfile'], ctx.obj['lpvnames'], ctx.obj['bpfilter'], ctx.obj['pvlist'],  ctx.obj['lhost'], ctx.obj['lhexcl'], ctx.obj['live'], ctx.obj['printdata'],ctx.obj['jsonoutput'], ctx.obj['storedata'])
     print(" ************* GEMSPY OUTPUT ************************")

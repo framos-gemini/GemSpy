@@ -39,6 +39,6 @@ class Deploy:
              twriteL = t2
              sys.stdout.flush()
        
-       procPck.terminate()
+       #procPck.terminate()
        procPck.setBreakLoop(True)
        return dataClient
