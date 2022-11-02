@@ -1,6 +1,6 @@
 import multiprocessing
 import threading
-from PyShark import PyShark
+from DataCapture import DataCapture
 from DataClients import DataClients
 from ProcessPackage import ProcessPackage
 import time, sys
@@ -13,27 +13,19 @@ class Deploy:
        print (f'numProc: {numProc}')
        # the queue[0] is the main which will be shared with 
        # the thread consumer
-       qList = []
-       for i in range (numProc):
-           qList.append(multiprocessing.Queue())
+       q = multiprocessing.Queue()
        l = threading.Lock()
        dataClient = DataClients(lock=l, fpath='./spy-result.txt', lpvFilter=lpvfilter)
-       procPck = ProcessPackage(qList[0], dataClient, lock=l)  
-       pys = PyShark(interface=interface, lhost=lhostP, lhexcl=lhexcl, bpfilter=bpfilter)
-       p1 = None
-       if (pathFile):
-          p1 = multiprocessing.Process(target=pys.readFile, args=(qList,pathFile))         
-       else:
-          # TODO, it is not updated with the last change, i.e. not supported the qList
-          p1 = multiprocessing.Process(target=pys.liveCapture, args=(qList[0],))
-       pth1 = threading.Thread(target=procPck.readPackgCon)
-       p1.start()
-       pth1.start()
+       procPck = ProcessPackage(q, dataClient, lock=l)  
+       pys = DataCapture(lhostP, lhexcl, bpfilter, q, interface, pathFile )
+       #pth1 = threading.Thread(target=procPck.readPackgCon)
+       pys.start()
+       procPck.start()
        t1 = int(time.time())
        t0 = t1
        twriteL = t1
-       while (p1.is_alive()):
-          p1.join(5)
+       while (pys.is_alive()):
+          pys.join(5)
           if (printdata == 0 and nSecStore == 0):
              print('.', end=" ")
           t2 = int(time.time())
@@ -47,6 +39,6 @@ class Deploy:
              twriteL = t2
              sys.stdout.flush()
        
-       p1.terminate()
+       procPck.terminate()
        procPck.setBreakLoop(True)
        return dataClient

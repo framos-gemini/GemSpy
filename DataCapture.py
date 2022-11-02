@@ -1,38 +1,37 @@
-import re
 from dataclasses import dataclass, field
-import datetime
-import sys
-import multiprocessing
-import copy
 from typing import List 
-import sys, os
-#sys.path.append('/home/software/fr/gemspy/pyshark.git/src')
-sys.path.append('/home/software/fr/gemspy/pyshark.git/src')
-#sys.path.append('./pyshark/src')
+from multiprocessing import Queue, Process, cpu_count
+import re, datetime, sys, os, time, glob
+sys.path.append(f'{os.getcwd()}/pyshark.git/src')
 import pyshark 
-import time, glob
 
+class DataCapture(Process):
 
-@dataclass
-class PyShark:
-   param              = {'-X': f'lua_script:{os.getcwd()}/tshark-plugin/ca.lua'}
-   bpfilter     : str = '' 
-   cap                = None
-   interface    : str = 'eno1'
-   dMultproc          = {'qList' : None, 'lProc' : [], 'lPath' : []}
-   #qList        : multiprocessing.Queue = None
-   lhost : List = field(default_factory=list) 
-   lhexcl : List = field(default_factory=list)  # List host to exclude capturing package. 
-   isProcessing : bool =  False
+   def __init__(self, lhost : List, lhexcl : List, bpfilter : str, mainQ : Queue, interface=None, fpath=None):
+      Process.__init__(self)
+      self.param               = {'-X': f'lua_script:{os.getcwd()}/tshark-plugin/ca.lua'}
+      self.bpfilter     : str  = bpfilter
+      self.interface    : str  = interface
+      self.mainQ        : Queue = mainQ
+      self.lhost        : List = lhost
+      self.lhexcl       : List = lhexcl # List host to exclude capturing package. 
+      self.fpath        = fpath
+      
+   def run(self):
+      if (self.fpath):
+         self.readFile()
+      elif(self.interface):
+         self.liveCapture()
+      else:
+         print('The PyShark process needs a path file definition or an ethernet card interface')
 
    #################################
-   def readFile(self, qList, file_path):
+   def readFile(self):
       try:
-         self.dMultproc['qList'] = qList
-         if os.path.isfile(file_path):
-            self.__readFile__(file_path, self.dMultproc['qList'])
-         elif os.path.isdir(file_path):
-            self.processFiles(file_path)        
+         if os.path.isfile(self.fpath):
+            self.__readFile__(self.fpath, self.mainQ)
+         elif os.path.isdir(self.fpath):
+            self.processFiles()        
          else:
             print('Bad Option, the path provided is not a directory or file')
       except Exception as e:
@@ -47,8 +46,8 @@ class PyShark:
    #################################
    def __readFile__(self, path, q):  
       try:
-         self.cap = pyshark.FileCapture(path, custom_parameters=self.param)
-         for p in self.cap:
+         cap = pyshark.FileCapture(path, custom_parameters=self.param)
+         for p in cap:
             q.put(p)
       except Exception as e:
          print(e)
@@ -75,28 +74,30 @@ class PyShark:
          filesD[fname] = {'st_size' : ifile.st_size, 'updated' : True}
       return updated, lfiles, nFilesReady
 
-   def waitForAllProc(self, nProc):
+   def waitForAllProc(self, dMultproc):
       try:
         # The first proccess is introducing the packages
         # in the main queue which is reading the consumer
-        if not self.dMultproc['lProc'][0].is_alive():
-            return 0
-        self.dMultproc['lProc'][0].join(60) # No more 60 seconds
-        qSize1 = self.dMultproc['qList'][0].qsize()
+        #if not dMultproc['lProc'][0].is_alive():
+        #    return 0
+        dMultproc['lProc'][0].join(60) # No more 60 seconds
+        qSize1 = dMultproc['qList'][0].qsize()
+        nProc = len(dMultproc['lProc'])
+        sizeCurrentQ = 0
         for i in range(1, nProc):
            #print(f'iteration {i} ')
+           #dMultproc['lProc'][i].join(20) # No more 20 seconds
            n = 0
            try:
-             q =  self.dMultproc['qList'][i]
-             q0 = self.dMultproc['qList'][0]
+             q =  dMultproc['qList'][i]
+             q0 = dMultproc['qList'][0]
              while (True):
                 p = q.get(timeout=1)
                 q0.put(p)
                 n=n+1
            except Exception as e:
                 print(e)
-                qSize1 = self.dMultproc['qList'][0].qsize()
-                print(f'Q({i}): {n} pkgs transfered.\nQ(0).Init:{qSize1} pkgs - Current: {self.dMultproc["qList"][0].qsize()} pkgs')
+                print(f'Q({i}): {n} pkgs transfered.\nQ(0).Init:{qSize1} pkgs - Current: {dMultproc["qList"][0].qsize()} pkgs')
            n = 0
         return 1
       except Exception as e:
@@ -106,31 +107,37 @@ class PyShark:
 
    #################################
 
-   def processFiles(self, dir_path):
+   def processFiles(self):
       t1 = time.time()
       filesD = {}
+      numProc = cpu_count() 
+      maxQueues = max(1, numProc - 2) # Two process are using for the consumer and the main process
+      dMultproc = {'qList' : [], 'lProc' : [], 'lPath' : []}
+      dMultproc['qList'].append(self.mainQ)
+      dMultproc['lProc'].append(None)
+      for i in range (1,maxQueues):
+          dMultproc['qList'].append(Queue())
+          dMultproc['lProc'].append(None)
 
-      numProc = len(self.dMultproc['qList'])
-      self.dMultproc['lProc'] = [None] * len(self.dMultproc['qList'])
       while (True):
-         updated, lfiles, nFilesReady = self.getInfoFiles(dir_path, filesD)
+         updated, lfiles, nFilesReady = self.getInfoFiles(self.fpath, filesD)
          # I have taken the condtion nFilesReady < numProc because
          # there is delay in the nfs files updating which makes that 
          # the getInfoFiles creates the files are not being updated. 
          # We can not remove the last file because could be used by
          # tshark in the other machine and if you remove it the tshark
          # will crash. 
-         if (not filesD or nFilesReady <= numProc):
+         if (not filesD or nFilesReady <= maxQueues):
              time.sleep(1)
              continue
          nIter = nFilesReady
-         if (nIter > numProc):
-            nIter = numProc
+         if (nIter > maxQueues):
+            nIter = maxQueues
          for i in range(nIter):
-            self.dMultproc['lProc'][i] = multiprocessing.Process(target=self.__readFile__, args=(lfiles[i], self.dMultproc['qList'][i]))
-            self.dMultproc['lProc'][i].start()
+            dMultproc['lProc'][i] = Process(target=self.__readFile__, args=(lfiles[i], dMultproc['qList'][i]))
+            dMultproc['lProc'][i].start()
 
-         self.waitForAllProc(nIter)
+         self.waitForAllProc(dMultproc)
          for i in range(nIter):
              try:
                 os.remove(lfiles[i])
@@ -138,7 +145,6 @@ class PyShark:
                  print("Error removing the file")
                  print(e2)
              filesD.pop(lfiles[i])     
-             self.isProcessing = True
 
          t2 = time.time()
          print(f'-Time spent analysing the previous {nIter} files was {t2 - t1} secs')
@@ -146,9 +152,9 @@ class PyShark:
          
    #################################
    def newPackage(self, p):
-      self.q.put(p)
+      self.mainQ.put(p)
    #################################
-   def liveCapture(self, q):
+   def liveCapture(self):
       bpf_filterOpt=''
       if (self.lhost):
          for i in range(0,len(self.lhost)):
@@ -169,9 +175,7 @@ class PyShark:
       print(f'bpfilter: {self.bpfilter}')
       self.param['-f'] = self.bpfilter if self.bpfilter else bpf_filterOpt
       print(self.param)
-      self.cap = pyshark.LiveCapture(interface=self.interface, custom_parameters=self.param)
-      self.cap.set_debug()
-      self.q = q
-      self.cap.apply_on_packets(self.newPackage)
-      return self.cap
+      cap = pyshark.LiveCapture(interface=self.interface, custom_parameters=self.param)
+      cap.set_debug()
+      cap.apply_on_packets(self.newPackage)
 

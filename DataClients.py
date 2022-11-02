@@ -12,8 +12,6 @@ class DataClients:
    lock: threading.Lock = None
    data: dict = field(default_factory=dict)
 
-   #def __post_init__(self): 
-   #   self.fOut = open(self.fpath, "w")
    ################################## 
    def filterHost(self, host):
        return re.sub(r'\.cl\.gemini\.edu','',host)
@@ -47,26 +45,19 @@ class DataClients:
    ##################################
    def checkPvFilter(self, pvName):
       if (not self.lpvFilter) or  (pvName in  self.lpvFilter):
-         print(f' pvName: {pvName} {self.lpvFilter} {not self.lpvFilter} {pvName in  self.lpvFilter} ')
          return True
       return False
    ##################################
    def addCID(self, h, srcPort, pvName, cid):
       if not self.checkPvFilter(pvName):
          return False
-      #self.filterHost(h)
       self.addPort(h, srcPort)
-      #print(cid in self.data[h][srcPort])
-      #print(f'{srcPort} {h} {cid}')
       if not (cid in self.data[h][srcPort]):
-          #self.data[h][srcPort][cid] = { 'val' : [], 'sid':'', 'pv':pvName, 'opId':'', 'subsId':'', 'dstHost':'', 'dstPort':'', 'write' : []}
           self.data[h][srcPort][cid] = { 'val' : [], 'sid':'', 'pv':pvName, 'opId':set(), 'subsId':'', 'dstHost':'', 'dstPort':'', 'write' : []}
           return True
       return False
    ##################################
    def addDstHost(self, hsrc, dst_host, serv_port, cid, srcPort):
-      #hsrc = self.filterHost(src_host)
-      #hdst = self.filterHost(dst_host)
       if hsrc in self.data and srcPort in self.data[hsrc] and cid in self.data[hsrc][srcPort]:
          self.data[hsrc][srcPort][cid]['dstHost'] = dst_host
          self.data[hsrc][srcPort][cid]['dstPort'] = serv_port
@@ -126,16 +117,13 @@ class DataClients:
    def setOpeID(self, src_host, srcPort, sid, oid):
       cid = self.getCidFromInField(src_host, sid, 'sid', srcPort)
       if (cid is not None):
-         #self.data[src_host][srcPort][cid]['opId'] = oid
          self.data[src_host][srcPort][cid]['opId'].add(oid)
          return True
       return False
    ##################################
    def setWriteOrder(self, src_host, sid, srcPort, val, ts ):
       cid = self.getCidFromInField(src_host, sid, 'sid', srcPort)
-      print(f'cid: {cid} - {src_host} - {sid} - {srcPort} ')
       if (cid is not None):
-          #self.data[src_host][srcPort][cid]['write'].append({ts:val})
           self.data[src_host][srcPort][cid]['write'].append({ts:val})
 
    def writeLog(self, path):

@@ -6,25 +6,30 @@ import queue
 from Code import Code
 from DataClients import DataClients
 import time
-import threading
+from threading import Thread, Lock
 
-@dataclass
-class ProcessPackage:
-    q : multiprocessing.Queue
-    dataClient : DataClients
-    lock : threading.Lock
-    code = Code()
-    # TODO. There is a different conversion type between python 3.9.12 and 3.7.3
-    # when try to get the cmd = int(l.get_field('command')). In 3.9.12 the int 
-    # needs to specified the base, but in 3.7.3 when you specify the base, 
-    # the result is differnt. For example, the command 0x15, specifying the base 16
-    # the result is 33 instead of 21. The class of the l.get_filed is the pyshark.packet.fields.LayerFieldsContainer
-    # command: 0x15 - 21, type:<class 'pyshark.packet.fields.LayerFieldsContainer'>, cmd-New: 33 cmd2: 21 
-    CONVERT_3_7 = sys.version_info[:3] == (3,7,3) 
-    nPack : int = 0
-    nMax : int = 0
-    bLoop : bool = False
-    wLog : bool = False
+class ProcessPackage(Thread):
+    def __init__(self, q : multiprocessing.Queue, dataClient : DataClients, lock : Lock):
+       Thread.__init__(self)
+       self.q = q
+       self.dataClient = dataClient
+       self.lock = lock
+       self.code = Code()
+       # TODO. There is a different conversion type between python 3.9.12 and 3.7.3
+       # when try to get the cmd = int(l.get_field('command')). In 3.9.12 the int 
+       # needs to specified the base, but in 3.7.3 when you specify the base, 
+       # the result is differnt. For example, the command 0x15, specifying the base 16
+       # the result is 33 instead of 21. The class of the l.get_filed is the pyshark.packet.fields.LayerFieldsContainer
+       # command: 0x15 - 21, type:<class 'pyshark.packet.fields.LayerFieldsContainer'>, cmd-New: 33 cmd2: 21 
+       self.CONVERT_3_7 = sys.version_info[:3] == (3,7,3) 
+       self.nPack : int = 0
+       self.nMax : int = 0
+       self.bLoop : bool = False
+       self.wLog : bool = False
+
+    def run(self):
+       print('Thread initiated')
+       self.readPackgCon()
     ###############################
     def setBreakLoop(self, opt):
        self.bLoop = opt
@@ -77,8 +82,8 @@ class ProcessPackage:
                   if (ecaCode is None): # Message from Client Read Request
                      self.dataClient.setOpeID(p.ip.get('src_host'), p.tcp.get('srcport'), l.get('sid'), l.get('ioid'))
                   else: # IOC 
-                     ecaCode = int(ecaCode)
-                     if (ecaCode == self.code.ECA_NORMAL): # Value transmitted well. 
+                     ecaCode2 = int(ecaCode) if self.CONVERT_3_7 else int(ecaCode, 16)
+                     if (ecaCode2 == self.code.ECA_NORMAL): # Value transmitted well. 
                         self.dataClient.addValueByOid(p.ip.get('dst_host'), 
                                                   l.get('ioid'), 
                                                   p.tcp.get('dstport'),
